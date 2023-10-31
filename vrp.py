@@ -6,6 +6,8 @@ import pandas as pd
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import time
+import folium
+import streamlit_folium as st_folium
 
 # GLOBAL
 GEOLOCATOR = Nominatim(user_agent="myVRPapp")
@@ -78,16 +80,6 @@ def extract_routes(solution, routing, manager):
             index = solution.Value(routing.NextVar(index))
         routes.append(route_for_vehicle)
     return routes
-    
-    #for vehicle_id in range(data['num_vehicles']):
-    #    route = []
-    #    index = routing.Start(vehicle_id)
-    #    while not routing.IsEnd(index):
-    #        route.append(index)
-    #        index = solution.Value(routing.NextVar(index))
-    #    routes.append(route)
-    
-    return routes
 
 def get_lat_lon(city):
     location = GEOLOCATOR.geocode(city)
@@ -96,6 +88,20 @@ def get_lat_lon(city):
         return location.latitude, location.longitude
     else:
         return None, None
+
+def plot_routes_on_map(routes, locations):
+    m = folium.Map(location=locations[0], zoom_start=10)
+
+    for route in routes:
+        if len(route) > 1:
+            latitudes = [locations[point][0] for point in route]
+            longitudes = [locations[point][1] for point in route]
+
+            route_latlons = list(zip(latitudes, longitudes))
+
+            folium.PolyLine(route_latlons, color="blue", weight=2.5, opacity=1).add_to(m)
+    
+    return m
 
 def main():
     st.title('Vehicle Routing Problem Visualizer')
@@ -112,15 +118,12 @@ def main():
 
         if solution:
             routes = extract_routes(solution, routing, manager)
-            for index, route in enumerate(routes):
-                latitudes = [locations[point][0] for point in route]
-                longtitudes = [locations[point][1] for point in route]
-                st.write(f"Route for Vehicle {index}: {route}")
-                st.map(pd.DataFrame({'lat': latitudes, 'lon':longtitudes}))
+
+            map_with_all_routes = plot_routes_on_map(routes, locations)
+
+            st_folium.folium_static(map_with_all_routes)
         else:
             st.warning("No Solution Found")
-    
-    st.map(pd.DataFrame(locations, columns=['lat', 'lon']))
 
 if __name__ == '__main__':
     main()
