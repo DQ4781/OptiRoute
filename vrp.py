@@ -5,16 +5,32 @@ import numpy as np
 import pandas as pd
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+import time
 
-# Find Euclidean Distance between Two Points
-def compute_euclidean_distance_matrix(locations):
+# GLOBAL
+GEOLOCATOR = Nominatim(user_agent="myVRPapp")
+major_us_cities = [
+    "New York, NY", "Los Angeles, CA", "Chicago, IL", "Houston, TX", "Phoenix, AZ", 
+    "Philadelphia, PA", "San Antonio, TX", "San Diego, CA", "Dallas, TX", "San Jose, CA",
+    "Austin, TX", "Jacksonville, FL", "Fort Worth, TX", "Columbus, OH", "Charlotte, NC",
+    "San Francisco, CA", "Indianapolis, IN", "Seattle, WA", "Denver, CO", "Washington, DC",
+    "Boston, MA", "El Paso, TX", "Nashville, TN", "Detroit, MI", "Oklahoma City, OK",
+    "Portland, OR", "Las Vegas, NV", "Memphis, TN", "Louisville, KY", "Baltimore, MD",
+    "Milwaukee, WI", "Albuquerque, NM", "Tucson, AZ", "Fresno, CA", "Sacramento, CA",
+    "Mesa, AZ", "Atlanta, GA", "Kansas City, MO", "Colorado Springs, CO", "Omaha, NE",
+    "Raleigh, NC", "Miami, FL", "Long Beach, CA", "Virginia Beach, VA", "Oakland, CA",
+    "Minneapolis, MN", "Tampa, FL", "Tulsa, OK", "Arlington, TX", "New Orleans, LA"
+]
+
+# Find Haversine Distance between Two Points
+def compute_geodesic_distance_matrix(locations):
     num_locations = len(locations)
     distance_matrix = np.zeros((num_locations, num_locations))
 
     for i in range(num_locations):
         for j in range(num_locations):
             if i != j:
-                distance_matrix[i][j] = np.linalg.norm(np.array(locations[i]) - np.array(locations[j]))
+                distance_matrix[i][j] = geodesic(locations[i], locations[j]).miles
             else:
                 distance_matrix[i][j] = 0
     
@@ -23,7 +39,7 @@ def compute_euclidean_distance_matrix(locations):
 # Create Data Model for VRP
 def create_data_model(numVeh, locations):
     data = {}
-    data['distance_matrix'] = compute_euclidean_distance_matrix(locations)
+    data['distance_matrix'] = compute_geodesic_distance_matrix(locations)
     data['num_vehicles'] = numVeh
     data['depot'] = 0
     return data
@@ -47,37 +63,55 @@ def compute_vrp(data):
 
     solution = routing.SolveWithParameters(search_parameters)
     if solution:
-        return solution, routing
+        return solution, routing, manager
     else:
         return None, None
 
-def extract_routes(solution, routing, data):
+def extract_routes(solution, routing, manager):
     routes = []
-    for vehicle_id in range(data['num_vehicles']):
-        route = []
+    for vehicle_id in range(routing.vehicles()):
+        route_for_vehicle = []
         index = routing.Start(vehicle_id)
         while not routing.IsEnd(index):
-            route.append(index)
+            point_index = manager.IndexToNode(index)
+            route_for_vehicle.append(point_index)
             index = solution.Value(routing.NextVar(index))
-        routes.append(route)
+        routes.append(route_for_vehicle)
+    return routes
+    
+    #for vehicle_id in range(data['num_vehicles']):
+    #    route = []
+    #    index = routing.Start(vehicle_id)
+    #    while not routing.IsEnd(index):
+    #        route.append(index)
+    #        index = solution.Value(routing.NextVar(index))
+    #    routes.append(route)
     
     return routes
+
+def get_lat_lon(city):
+    location = GEOLOCATOR.geocode(city)
+    time.sleep(1)
+    if location:
+        return location.latitude, location.longitude
+    else:
+        return None, None
 
 def main():
     st.title('Vehicle Routing Problem Visualizer')
 
     # Get User Input
     num_vehicles = st.slider('Number of Vehicles', 1, 10, 3)
-    num_destinations = st.slider('Number of destinations', 2, 50, 10)
-    
-    locations = np.random.rand(num_destinations, 2) * 100
+    cities = st.multiselect('Choose cities:', major_us_cities)
+
+    locations = [get_lat_lon(city) for city in cities]
 
     if st.button('Compute Routes'):
-        data = create_data_model(num_vehicles, locations.tolist())
-        solution, routing = compute_vrp(data)
+        data = create_data_model(num_vehicles, locations)
+        solution, routing, manager = compute_vrp(data)
 
         if solution:
-            routes = extract_routes(solution, routing, data)
+            routes = extract_routes(solution, routing, manager)
             for index, route in enumerate(routes):
                 latitudes = [locations[point][0] for point in route]
                 longtitudes = [locations[point][1] for point in route]
