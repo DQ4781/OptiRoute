@@ -7,7 +7,14 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import time
 import folium
+from folium.plugins import MarkerCluster
 import streamlit_folium as st_folium
+from dotenv import load_dotenv
+import os
+import openrouteservice
+
+# Load Env Variables
+load_dotenv()
 
 # GLOBAL
 GEOLOCATOR = Nominatim(user_agent="myVRPapp")
@@ -24,45 +31,25 @@ major_us_cities = [
     "Minneapolis, MN", "Tampa, FL", "Tulsa, OK", "Arlington, TX", "New Orleans, LA"
 ]
 
-# Find Haversine Distance between Two Points
-def compute_geodesic_distance_matrix(locations):
-    """
-    Computes the distance matrix between given locations using the Haversine formula.
-    
-    Args:
-        locations (list): List of tuples containing (latitude, longitude) of cities.
-        
-    Returns:
-        numpy.ndarray: Distance matrix in miles between the given locations.
-    """
-    num_locations = len(locations)
-    distance_matrix = np.zeros((num_locations, num_locations))
-
-    for i in range(num_locations):
-        for j in range(num_locations):
-            if i != j:
-                distance_matrix[i][j] = geodesic(locations[i], locations[j]).miles
-            else:
-                distance_matrix[i][j] = 0
-    
-    return distance_matrix
+# ENV VARIABLES
+ors_key = os.getenv('ORS_KEY')
+client = openrouteservice.Client(key=ors_key)
 
 # Create Data Model for VRP
-def create_data_model(numVeh, locations, depot_val=0):
-    """
-    Creates the data model required for solving VRP.
+def create_data_model(num_vehicles, locations):
+    distance_matrix = client.distance_matrix(
+        locations=locations,
+        profile='driving-car',
+        metrics=["distance"],
+        units='mi',
+    )['distances']
     
-    Args:
-        numVeh (int): Number of vehicles available.
-        locations (list): List of tuples containing (latitude, longitude) of cities.
-        
-    Returns:
-        dict: Data model containing distance matrix, number of vehicles, and depot index.
-    """
-    data = {}
-    data['distance_matrix'] = compute_geodesic_distance_matrix(locations)
-    data['num_vehicles'] = numVeh
-    data['depot'] = depot_val
+    data = {
+        "distance_matrix": distance_matrix,
+        "num_vehicles": num_vehicles,
+        "depot": 0
+    }
+
     return data
 
 # Computer VRP Solution Using ORTools
@@ -140,7 +127,7 @@ def get_lat_lon(city):
     else:
         return None, None
 
-def plot_routes_on_map(routes, locations, depot_location):
+def plot_routes_on_map(routes, locations):
     """
     Plots extracted routes on a Folium map.
     
@@ -151,16 +138,30 @@ def plot_routes_on_map(routes, locations, depot_location):
     Returns:
         folium.Map: Folium map object displaying routes.
     """
-    m = folium.Map(location=depot_location, zoom_start=10) #before m = folium.Map(location=locations[0], zoom_start=10)
+    m = folium.Map(location=locations[0], zoom_start=10)
+    markerCluster = MarkerCluster().add_to(m)
 
     for route in routes:
-        if len(route) > 1:
-            latitudes = [locations[point][0] for point in route]
-            longitudes = [locations[point][1] for point in route]
+        full_route_geometry = []
 
-            route_latlons = list(zip(latitudes, longitudes))
+        for point in route:
+            location = locations[point]
+            folium.Marker(location, icon=folium.Icon(color='blue')).add_to(markerCluster)
 
-            folium.PolyLine(route_latlons, color="blue", weight=2.5, opacity=1).add_to(m)
+        for i in range(len(route)-1):
+            start_coord = locations[route[i]]
+            end_coord = locations[route[i+1]]
+
+            route_directions = client.directions(
+                coordinates=[start_coord, end_coord],
+                profile='driving-car',
+                format='geojson'
+            )
+
+            route_geometry = route.directions['features'][0]['geometry']['coordinates']
+            full_route_geometry += route_geometry
+        
+        folium.PolyLine(full_route_geometry, color='blue', weight=2.5, opacity=1).add_to(m)
     
     return m
 
@@ -173,24 +174,14 @@ def main():
 
     locations = [get_lat_lon(city) for city in cities]
 
-    # Create radio menu with selected options as choices for depot
-    selected_radio_option = st.radio("Select an option from multiselect:", cities)
-
-    # Display the selected radio option
-    st.write("You selected as your depot:", selected_radio_option)
-
-    depot_val = cities.index(selected_radio_option)
-
-    depot_location = locations[depot_val]
-
     if st.button('Compute Routes'):
-        data = create_data_model(num_vehicles, locations, depot_val)
+        data = create_data_model(num_vehicles, locations)
         solution, routing, manager = compute_vrp(data)
 
         if solution:
             routes = extract_routes(solution, routing, manager)
 
-            map_with_all_routes = plot_routes_on_map(routes, locations, depot_location) #before map_with_all_routes = plot_routes_on_map(routes, locations)
+            map_with_all_routes = plot_routes_on_map(routes, locations)
 
             st_folium.folium_static(map_with_all_routes)
         else:
