@@ -179,9 +179,9 @@ def main():
     # Display the selected radio option
     st.write("You selected as your depot:", selected_radio_option)
 
-    depot_val = cities.index(selected_radio_option)
-
-    depot_location = locations[depot_val]
+    if selected_radio_option is not None:
+        depot_val = cities.index(selected_radio_option)
+        depot_location = locations[depot_val]
 
     if st.button('Compute Routes'):
         data = create_data_model(num_vehicles, locations, depot_val)
