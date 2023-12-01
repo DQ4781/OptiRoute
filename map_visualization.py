@@ -9,8 +9,7 @@ def plot_routes(routes, locations):
     :return: A Folium map object with plotted routes.
     """
     # Assuming the first location is the depot
-    depot_location = locations[0]  
-    map_object = folium.Map(location=depot_location, zoom_start=12)
+    map_object = folium.Map(location=locations[0], zoom_start=12)
 
     # Colors for different routes
     colors = ['blue', 'green', 'red', 'purple', 'orange', 'darkred', 'lightred', 'beige', 'darkblue', 'darkgreen', 'cadetblue', 'darkpurple', 'white', 'pink', 'lightblue', 'lightgreen', 'gray', 'black', 'lightgray']
